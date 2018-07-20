@@ -10,14 +10,16 @@ import (
 	"github.com/weaveworks/flux"
 )
 
-// Escape sequences.
 const (
-	moveCursorUp    = "\033[%dA"
-	moveStartOfLine = "\r"
-	hideCursor      = "\033[?25l"
-	showCursor      = "\033[?25h"
-	boldText        = "\033[1m"
-	resetText       = "\033[0m"
+	// Escape sequences.
+	moveCursorUp = "\033[%dA"
+	hideCursor   = "\033[?25l"
+	showCursor   = "\033[?25h"
+
+	// Glyphs.
+	glyphSelected  = "\u21d2"
+	glyphChecked   = "\u25c9"
+	glyphUnchecked = "\u25ef"
 
 	tableHeading = "CONTROLLER \tSTATUS \tUPDATES"
 )
@@ -231,7 +233,7 @@ func (m *Menu) renderItem(item menuItem, inline bool) string {
 func (m *Menu) renderInteractiveItem(item menuItem, inline bool, index int) string {
 	pre := bytes.Buffer{}
 	if index == m.cursor {
-		pre.WriteString("\u21d2")
+		pre.WriteString(glyphSelected)
 	} else {
 		pre.WriteString(" ")
 	}
@@ -262,9 +264,9 @@ func (i menuItem) checkbox() string {
 	case !i.checkable():
 		return " "
 	case i.checked:
-		return "\u25c9"
+		return glyphChecked
 	default:
-		return "\u25ef"
+		return glyphUnchecked
 	}
 }
 
