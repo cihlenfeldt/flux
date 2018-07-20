@@ -16,46 +16,54 @@ const (
 	moveStartOfLine = "\r"
 	hideCursor      = "\033[?25l"
 	showCursor      = "\033[?25h"
+	boldText        = "\033[1m"
+	resetText       = "\033[0m"
 
 	tableHeading = "CONTROLLER \tSTATUS \tUPDATES"
 )
 
-type WriteFlusher interface {
-	io.Writer
-	Flush() error
-}
-
-type ClearableLineWriter struct {
-	wf    WriteFlusher
+type writer struct {
+	out   io.Writer
+	tw    *tabwriter.Writer
 	lines int    // lines written since last clear
 	width uint16 // terminal width
 }
 
-func NewClearableWriter(wf WriteFlusher) *ClearableLineWriter {
-	return &ClearableLineWriter{wf: wf, lines: 0, width: terminalWidth()}
+func newWriter(out io.Writer) *writer {
+	return &writer{
+		out:   out,
+		tw:    tabwriter.NewWriter(out, 0, 2, 2, ' ', 0),
+		width: terminalWidth(),
+	}
 }
 
-// Writeln counts the lines we output.
-func (c *ClearableLineWriter) Writeln(line string) error {
+func (c *writer) hideCursor() {
+	fmt.Fprintf(c.out, hideCursor)
+}
+
+func (c *writer) showCursor() {
+	fmt.Fprintf(c.out, showCursor)
+}
+
+// writeln counts the lines we output.
+func (c *writer) writeln(line string) error {
 	line += "\n"
 	c.lines += (len(line)-1)/int(c.width) + 1
-	_, err := c.wf.Write([]byte(line))
+	_, err := c.tw.Write([]byte(line))
 	return err
 }
 
-// Clear moves the terminal cursor up to the beginning of the
+// clear moves the terminal cursor up to the beginning of the
 // line where we started writing.
-func (c *ClearableLineWriter) Clear() {
-	if c.lines == 0 {
-		return
+func (c *writer) clear() {
+	if c.lines != 0 {
+		fmt.Fprintf(c.out, moveCursorUp, c.lines)
 	}
-	fmt.Fprintf(c.wf, moveCursorUp, c.lines)
-	fmt.Fprintf(c.wf, moveStartOfLine)
 	c.lines = 0
 }
 
-func (c *ClearableLineWriter) Flush() error {
-	return c.wf.Flush()
+func (c *writer) flush() error {
+	return c.tw.Flush()
 }
 
 type menuItem struct {
@@ -69,7 +77,7 @@ type menuItem struct {
 
 // Menu presents a list of controllers which can be interacted with.
 type Menu struct {
-	out        *ClearableLineWriter
+	wr         *writer
 	items      []menuItem
 	selectable int
 	cursor     int
@@ -84,9 +92,7 @@ type Menu struct {
 // It can print a one time listing with `Print()` or then enter
 // interactive mode with `Run()`.
 func NewMenu(out io.Writer, results Result, verbosity int) *Menu {
-	m := &Menu{
-		out: NewClearableWriter(tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)),
-	}
+	m := &Menu{wr: newWriter(out)}
 	m.fromResults(results, verbosity)
 	return m
 }
@@ -146,8 +152,8 @@ func (m *Menu) Run() (map[flux.ResourceID][]ContainerUpdate, error) {
 	}
 
 	m.printInteractive()
-	fmt.Printf(hideCursor)
-	defer fmt.Printf(showCursor)
+	m.wr.hideCursor()
+	defer m.wr.showCursor()
 
 	for {
 		ascii, keyCode, err := getChar()
@@ -166,7 +172,7 @@ func (m *Menu) Run() (map[flux.ResourceID][]ContainerUpdate, error) {
 					specs[item.id] = append(specs[item.id], item.update)
 				}
 			}
-			m.out.Writeln("")
+			m.wr.writeln("")
 			return specs, nil
 		case 9, 'j':
 			m.cursorDown()
@@ -185,33 +191,33 @@ func (m *Menu) Run() (map[flux.ResourceID][]ContainerUpdate, error) {
 }
 
 func (m *Menu) Print() {
-	m.out.Writeln(tableHeading)
+	m.wr.writeln(tableHeading)
 	var previd flux.ResourceID
 	for _, item := range m.items {
 		inline := previd == item.id
-		m.out.Writeln(m.renderItem(item, inline))
+		m.wr.writeln(m.renderItem(item, inline))
 		previd = item.id
 	}
-	m.out.Flush()
+	m.wr.flush()
 }
 
 func (m *Menu) printInteractive() {
-	m.out.Clear()
-	m.out.Writeln("   " + tableHeading)
+	m.wr.clear()
+	m.wr.writeln("   " + tableHeading)
 	i := 0
 	var previd flux.ResourceID
 	for _, item := range m.items {
 		inline := previd == item.id
-		m.out.Writeln(m.renderInteractiveItem(item, inline, i))
+		m.wr.writeln(m.renderInteractiveItem(item, inline, i))
 		previd = item.id
 		if item.checkable() {
 			i++
 		}
 	}
-	m.out.Writeln("")
-	m.out.Writeln("Use arrow keys and [Space] to deselect containers; hit [Enter] to release selected.")
+	m.wr.writeln("")
+	m.wr.writeln("Use arrow keys and [Space] to deselect containers; hit [Enter] to release selected.")
 
-	m.out.Flush()
+	m.wr.flush()
 }
 
 func (m *Menu) renderItem(item menuItem, inline bool) string {
