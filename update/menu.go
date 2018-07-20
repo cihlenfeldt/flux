@@ -64,7 +64,7 @@ type menuItem struct {
 	error  string
 	update ContainerUpdate
 
-	selected bool
+	checked bool
 }
 
 // Menu presents a list of controllers which can be interacted with.
@@ -131,8 +131,8 @@ func (m *Menu) fromResults(results Result, verbosity int) {
 }
 
 func (m *Menu) AddItem(mi menuItem) {
-	if mi.selectable() {
-		mi.selected = true
+	if mi.checkable() {
+		mi.checked = true
 		m.selectable++
 	}
 	m.items = append(m.items, mi)
@@ -159,10 +159,10 @@ func (m *Menu) Run() (map[flux.ResourceID][]ContainerUpdate, error) {
 		case 3, 27, 'q':
 			return specs, errors.New("Aborted.")
 		case ' ':
-			m.toggleCursor()
+			m.toggleSelected()
 		case 13:
 			for _, item := range m.items {
-				if item.selected {
+				if item.checked {
 					specs[item.id] = append(specs[item.id], item.update)
 				}
 			}
@@ -172,14 +172,15 @@ func (m *Menu) Run() (map[flux.ResourceID][]ContainerUpdate, error) {
 			m.cursorDown()
 		case 'k':
 			m.cursorUp()
+		default:
+			switch keyCode {
+			case 40:
+				m.cursorDown()
+			case 38:
+				m.cursorUp()
+			}
 		}
 
-		switch keyCode {
-		case 40:
-			m.cursorDown()
-		case 38:
-			m.cursorUp()
-		}
 	}
 }
 
@@ -203,12 +204,12 @@ func (m *Menu) printInteractive() {
 		inline := previd == item.id
 		m.out.Writeln(m.renderInteractiveItem(item, inline, i))
 		previd = item.id
-		if item.selectable() {
+		if item.checkable() {
 			i++
 		}
 	}
 	m.out.Writeln("")
-	m.out.Writeln("Use [Space] to deselect containers and hit [Enter] to release selected.")
+	m.out.Writeln("Use arrow keys and [Space] to deselect containers; hit [Enter] to release selected.")
 
 	m.out.Flush()
 }
@@ -224,7 +225,7 @@ func (m *Menu) renderItem(item menuItem, inline bool) string {
 func (m *Menu) renderInteractiveItem(item menuItem, inline bool, index int) string {
 	pre := bytes.Buffer{}
 	if index == m.cursor {
-		pre.WriteString(">")
+		pre.WriteString("\u21d2")
 	} else {
 		pre.WriteString(" ")
 	}
@@ -235,8 +236,8 @@ func (m *Menu) renderInteractiveItem(item menuItem, inline bool, index int) stri
 	return pre.String()
 }
 
-func (m *Menu) toggleCursor() {
-	m.items[m.cursor].selected = !m.items[m.cursor].selected
+func (m *Menu) toggleSelected() {
+	m.items[m.cursor].checked = !m.items[m.cursor].checked
 	m.printInteractive()
 }
 
@@ -252,16 +253,16 @@ func (m *Menu) cursorUp() {
 
 func (i menuItem) checkbox() string {
 	switch {
-	case !i.selectable():
+	case !i.checkable():
 		return " "
-	case i.selected:
+	case i.checked:
 		return "\u25c9"
 	default:
 		return "\u25ef"
 	}
 }
 
-func (i menuItem) selectable() bool {
+func (i menuItem) checkable() bool {
 	return i.update.Container != ""
 }
 
